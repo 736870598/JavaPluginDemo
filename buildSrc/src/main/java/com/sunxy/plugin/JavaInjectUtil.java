@@ -6,7 +6,11 @@ import javassist.ClassPool;
 import javassist.CtClass;
 import javassist.CtMethod;
 import javassist.CtNewMethod;
+import javassist.Modifier;
 import javassist.NotFoundException;
+import javassist.bytecode.CodeAttribute;
+import javassist.bytecode.LocalVariableAttribute;
+import javassist.bytecode.MethodInfo;
 
 public class JavaInjectUtil {
 
@@ -23,10 +27,6 @@ public class JavaInjectUtil {
     }
 
     public static void injectCost(File classPath) {
-        System.out.println("-------- :" + classPath.getAbsolutePath());
-//        if (!classPath.getAbsolutePath().contains("\\intermediates")){
-//            return;
-//        }
         System.out.println("injectCost :" + classPath.getAbsolutePath());
         appendPath(classPath);
         findClass(classPath, classPath, "");
@@ -78,13 +78,14 @@ public class JavaInjectUtil {
                 System.out. println("declaredMethod = " + declaredMethod);
 
                 String oldName = declaredMethod.getName();
-                String newName = declaredMethod.getName() + "_sxy";
+                String newName = declaredMethod.getName() + "_proxy_";
 
                 String body = generateBody(ctClass, declaredMethod, newName);
-                System.out. println("method body = " + body);
+                String attr = getAttrInfo(ctClass, declaredMethod);
 
                 //将原方法名改成 新的方法名。
                 declaredMethod.setName(newName);
+                declaredMethod.insertBefore(attr);
 
                 //生成新的代理方法。方法名，参数，返回类型 与之前方法完全一样。
                 CtMethod proxyMethod = CtNewMethod.make(
@@ -107,28 +108,51 @@ public class JavaInjectUtil {
     /**
      * 生成代理方法体，包含原方法的调用和耗时打印
      */
-    private static String generateBody(CtClass ctClass, CtMethod ctMethod, String newName) throws Exception{
-
+    private static String generateBody(CtClass ctClass, CtMethod ctMethod, String newName) throws Exception {
         //方法返回类型
         String returnType = ctMethod.getReturnType().getName();
-        //生产的方法返回值     //) $$表示方法接收的所有参数
-        String methodResult = newName + "($$);";
+        //生产的方法返回值     // $$表示方法接收的所有参数
+        String methodResult = newName + "($$)";
+        String resultStr = "\"void\"";
         if (!"void".equals(returnType)){
             //处理返回值
             methodResult = returnType + " result = "+ methodResult;
+            resultStr = "result";
         }
-        return "{long costStartTime = System.currentTimeMillis();" +
-                methodResult +
-                "android.util.Log.e(\"" +
-                logTag +
-                "\", \"" +
-                ctClass.getName() +
-                "." +
-                ctMethod.getName() +
-                " 耗时：\" + (System.currentTimeMillis() - costStartTime) + \"ms\");" +
-                //处理一下返回值 void 类型不处理
-                ("void".equals(returnType) ? "}" : "return result;}");
+        String body =  "{" +
+                "long costStartTime = System.currentTimeMillis();" +
+                "%s;" +
+                "long temp = (System.currentTimeMillis() - costStartTime);" +
+                "android.util.Log.e(\"%s\", \"%s.%s 返回：\" + %s + \" 耗时：\" + temp + \"ms\");"
+                + ("void".equals(returnType) ? "" : "return result;") +
+                "}";
 
+        return String.format(body, methodResult, logTag,  ctClass.getName(), ctMethod.getName(), resultStr);
+    }
+
+    /**
+     * 获取输入参数信息。
+     */
+    private static String getAttrInfo(CtClass ctClass, CtMethod ctMethod) throws NotFoundException {
+        MethodInfo methodInfo = ctMethod.getMethodInfo();
+        CodeAttribute codeAttribute = methodInfo.getCodeAttribute();
+        LocalVariableAttribute attr = (LocalVariableAttribute) codeAttribute.getAttribute(LocalVariableAttribute.tag);
+        CtClass[] parameterTypes = ctMethod.getParameterTypes();
+        int paramLength = parameterTypes.length;
+        String body = "\"(\"";
+        if (attr != null) {
+            int pos = Modifier.isStatic(ctMethod.getModifiers()) ? 0 : 1;
+            for (int i = 0; i < paramLength; i++){
+                String name = attr.variableName(i + pos);
+                body += "+ \"" + name + ": \" + " + name;
+                if (i < paramLength - 1){
+                    body += " + \",\"";
+                }
+            }
+        }
+        body += " + \")\"";
+        return String.format("android.util.Log.e(\"%s\", \"%s.%s 输入：\" + %s);",
+                logTag, ctClass.getName(), ctMethod.getName(), body ) ;
     }
 
 
