@@ -33,7 +33,10 @@ public class JavaSunxyTransform extends Transform {
         System.out.println("sdkPath: " + androidJarPath);
 
         JavaInjectUtil.setAndroidJarPath(androidJarPath);
-        project.afterEvaluate(project1 -> JavaInjectUtil.setLogTag(buildType + "_" + config.logTag));
+        project.afterEvaluate(project1 ->{
+            JavaInjectUtil.setLogTag(buildType + "_" + config.logTag);
+            JavaInjectUtil.setShowInput(config.showInput);
+        } );
     }
 
     @Override

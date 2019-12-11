@@ -17,9 +17,15 @@ public class JavaInjectUtil {
     private static final ClassPool classPool = ClassPool.getDefault();
     private static String androidJar = "";
     private static String logTag = "tag";
+    private static boolean showInput;
 
     public static void setLogTag(String tag){
         logTag = tag;
+    }
+
+
+    public static void setShowInput(boolean show){
+        showInput = show;
     }
 
     public static void setAndroidJarPath(String path){
@@ -27,7 +33,7 @@ public class JavaInjectUtil {
     }
 
     public static void injectCost(File classPath) {
-        System.out.println("injectCost :" + classPath.getAbsolutePath());
+        System.out.println("plugin injectCost :" + classPath.getAbsolutePath());
         appendPath(classPath);
         findClass(classPath, classPath, "");
     }
@@ -52,7 +58,6 @@ public class JavaInjectUtil {
         try {
             classPool.insertClassPath(file.getAbsolutePath());
             classPool.appendClassPath(androidJar);
-            classPool.importPackage("android.os.Bundle");
         } catch (NotFoundException e) {
             e.printStackTrace();
         }
@@ -64,10 +69,9 @@ public class JavaInjectUtil {
             return;
         }
         clazzPath = clazzPath.replace(".class", "");
-        System.out. println("clazzPath = " + clazzPath);
+        System.out. println("plugin clazzPath = " + clazzPath);
         try {
             CtClass ctClass = classPool.getCtClass(clazzPath);
-            System.out. println("ctClass = " + ctClass);
 
             //解冻
             if (ctClass.isFrozen()) {
@@ -80,20 +84,23 @@ public class JavaInjectUtil {
                 String oldName = declaredMethod.getName();
                 String newName = declaredMethod.getName() + "_proxy_";
 
-                String body = generateBody(ctClass, declaredMethod, newName);
-                String attr = getAttrInfo(ctClass, declaredMethod);
+                if (showInput){
+                    declaredMethod.insertBefore( getAttrInfo(ctClass, declaredMethod));
+                }
+                String bodyInfo = generateBody(ctClass, declaredMethod, newName);
 
                 //将原方法名改成 新的方法名。
                 declaredMethod.setName(newName);
-                declaredMethod.insertBefore(attr);
 
                 //生成新的代理方法。方法名，参数，返回类型 与之前方法完全一样。
                 CtMethod proxyMethod = CtNewMethod.make(
                         declaredMethod.getModifiers(),
                         declaredMethod.getReturnType(),
-                        oldName, declaredMethod.getParameterTypes(),
+                        oldName,
+                        declaredMethod.getParameterTypes(),
                         declaredMethod.getExceptionTypes(),
-                        body, ctClass);
+                        bodyInfo,
+                        ctClass);
 
                 ctClass.addMethod(proxyMethod);
             }
